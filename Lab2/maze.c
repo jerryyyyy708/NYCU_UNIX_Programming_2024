@@ -22,8 +22,46 @@
 static dev_t devnum;
 static struct cdev c_dev;
 static struct class *clazz;
+char *maze0 = "#00: vacancy";
+char *maze1 = "#01: vacancy";
+char *maze2 = "#02: vacancy";
 char *maze_content = "#00: vacancy\n\n#01: vacancy\n\n#02: vacancy\n\n";
-bool created = false;
+static int user_cnt = 0;
+static int pids[3] = {-1, -1, -1};
+struct maze_t mazes[3];
+struct coord_t players[3];
+bool debug = true;
+
+static void random_build_maze(int idx, int x, int y){
+	return;
+}
+
+static void build_maze(int idx, int x, int y){
+	mazes[idx].w = x;
+    mazes[idx].h = y;
+    mazes[idx].sx = 1;
+    mazes[idx].sy = 1;
+    mazes[idx].ex = x - 2;
+    mazes[idx].ey = y - 2;
+	for(int i = 0; i < y; ++i) {
+        for(int j = 0; j < x; ++j) {
+            mazes[idx].blk[i][j] = (i == 0 || i == y-1 || j == 0 || j == x-1) ? '#' : '.';
+        }
+    }
+	mazes[idx].blk[sx][sy] = '*';
+	mazes[idx].blk[ex][ey] = 'E';
+	players[idx].x = 1;
+	players[idx].y = 1;
+	return
+}
+
+static bool is_created(){
+	for(int i=0; i<3; i++){
+		if(pids[i] == current -> pid)
+			return true;
+	}
+	return false;
+}
 
 static int maze_dev_open(struct inode *i, struct file *f) {
 	printk(KERN_INFO "maze: device opened.\n");
@@ -49,17 +87,38 @@ static long maze_dev_ioctl(struct file *fp, unsigned int cmd, unsigned long arg)
 	coord_t coord;
 	long ret = 0;
 	if(cmd != MAZE_CREATE){
-		if(!created)
-			return -ENOENT;
+		if(!is_created())
+			return -EBUSY;
 	}
     switch (cmd) {
         case MAZE_CREATE:
+			pid_t cur = current -> pid;
+			// check if a maze is already created
+			if (is_created())
+				return -EEXIST;
+			// check is there a spare maze
+			if (user_cnt == _MAZE_MAXUSER)
+				return ENOMEM;
             if (copy_from_user(&coord, (coord_t __user *)arg, sizeof(coord))) {
-                return -EFAULT;
+                return -EBUSY;
             }
-			if(coord.x < 0 || coord.y<0)
+			if(coord.x < 0 || coord.y < 0 || coord.x > _MAZE_MAXX || coord.y > _MAZE_MAXY)
 				return -EINVAL;
-            printk(KERN_INFO "Creating maze with size (%d, %d).\n", coord.x, coord.y);
+			//assign a maze
+			for(int i=0; i<3; i++){
+				if(pid[i] == -1){
+					pid[i] = cur;
+					user_cnt ++;
+					if(debug)
+						build_maze(i, coord.x, coord.y);
+					else
+						random_build_maze(i, coord.x, coord.y);
+
+					break;
+				}
+			}
+
+            printk(KERN_INFO "create maze done.");
 			created = true;
             break;
 
@@ -110,6 +169,24 @@ static const struct file_operations maze_dev_fops = {
 };
 
 static int maze_proc_read(struct seq_file *m, void *v) {
+	char *content="";
+	for(int i=0; i<3; i++){
+		if(pids[i] == -1){
+			seq_printf(m, "#0%d: vacancy\n\n", i);
+		}
+		else{
+			seq_printf(m, "#0%d:\n pid %d - [%d x %d]: (%d, %d) -> (%d, %d) @ (%d %d)", i, pids[i], mazes[i].w, mazes[i].h, mazes[i].sx, mazes[i].sy, mazes[i].ex, mazes[i].ey, players[i].x, players[i].y);
+
+            for(int y = 0; y < mazes[i].h; y++) {
+				seq_printf(m, "- %03d: ", y);
+                for(int x = 0; x < mazes[i].w; x++) {
+                    seq_printf(m, "%c", mazes[i].blk[y][x]);
+                }
+                seq_printf(m, "\n");
+            }
+            seq_printf(m, "\n");
+		}
+	}
     seq_printf(m, "%s", maze_content);
     return 0;
 }
