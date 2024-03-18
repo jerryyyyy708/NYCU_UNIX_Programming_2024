@@ -1,31 +1,17 @@
 #include <linux/module.h>	// included for all kernel modules
-
 #include <linux/kernel.h>	// included for KERN_INFO
-
 #include <linux/init.h>		// included for __init and __exit macros
-
 #include <linux/proc_fs.h>
-
 #include <linux/seq_file.h>
-
 #include <linux/errno.h>
-
 #include <linux/sched.h>	// task_struct requried for current_uid()
-
 #include <linux/cred.h>		// for current_uid();
-
 #include <linux/slab.h>		// for kmalloc/kfree
-
 #include <linux/uaccess.h>	// copy_to_user
-
 #include <linux/string.h>
-
 #include <linux/device.h>
-
 #include <linux/cdev.h>
-
 #include <linux/random.h>
-
 #include "maze.h"
 
 
@@ -34,11 +20,7 @@ static dev_t devnum;
 static struct cdev c_dev;
 static struct class * clazz;
 static int user_cnt = 0;
-static int pids[3] = {
-    -1,
-    -1,
-    -1
-};
+static int pids[3] = {-1,-1,-1};
 maze_t mazes[3];
 coord_t players[3];
 bool debug = false;
