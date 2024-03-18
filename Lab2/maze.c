@@ -1,8 +1,3 @@
-/*
- * Lab problem set for UNIX programming course
- * by Chun-Ying Huang <chuang@cs.nctu.edu.tw>
- * License: GPLv2
- */
 #include <linux/module.h>	// included for all kernel modules
 #include <linux/kernel.h>	// included for KERN_INFO
 #include <linux/init.h>		// included for __init and __exit macros
@@ -16,24 +11,101 @@
 #include <linux/string.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
+#include <linux/random.h>
 #include "maze.h"
 
 
+DEFINE_MUTEX(maze_mutex);
 static dev_t devnum;
 static struct cdev c_dev;
 static struct class *clazz;
-char *maze0 = "#00: vacancy";
-char *maze1 = "#01: vacancy";
-char *maze2 = "#02: vacancy";
-char *maze_content = "#00: vacancy\n\n#01: vacancy\n\n#02: vacancy\n\n";
 static int user_cnt = 0;
 static int pids[3] = {-1, -1, -1};
-struct maze_t mazes[3];
-struct coord_t players[3];
-bool debug = true;
+maze_t mazes[3];
+coord_t players[3];
+bool debug = false;
 
 static void random_build_maze(int idx, int x, int y){
-	return;
+    unsigned int rand_val;
+    mazes[idx].w = x;
+    mazes[idx].h = y;
+
+    get_random_bytes(&rand_val, sizeof(rand_val));
+    unsigned int sx = 1 + (rand_val % (x - 3));
+    get_random_bytes(&rand_val, sizeof(rand_val));
+    unsigned int sy = 1 + (rand_val % (y - 3));
+
+    unsigned int ex, ey;
+    do {
+        get_random_bytes(&rand_val, sizeof(rand_val));
+        ex = 1 + (rand_val % (x - 3));
+        get_random_bytes(&rand_val, sizeof(rand_val));
+        ey = 1 + (rand_val % (y - 3));
+    } while (sx == ex && sy == ey);
+
+    mazes[idx].sx = sx;
+    mazes[idx].sy = sy;
+    mazes[idx].ex = ex;
+    mazes[idx].ey = ey;
+    
+    int x_move = ex - sx;
+    int y_move = ey - sy;
+    
+    mazes[idx].blk[sy][sx] = 'A';
+    int current_x = sx, current_y = sy;
+
+    while (current_x != ex || current_y != ey) {
+        bool move_horizontally = false;
+        if (x_move != 0 && y_move != 0) {
+            get_random_bytes(&rand_val, sizeof(rand_val));
+            move_horizontally = (rand_val & 1); 
+        } else if (x_move != 0) {
+            move_horizontally = true;
+        }
+
+        if (move_horizontally) {
+            current_x += (x_move > 0) ? 1 : -1;
+            x_move -= (x_move > 0) ? 1 : -1;
+        } else {
+            current_y += (y_move > 0) ? 1 : -1;
+            y_move -= (y_move > 0) ? 1 : -1;
+        }
+        mazes[idx].blk[current_y][current_x] = 'A';
+    }
+
+    for(int i = 0; i < y; ++i) {
+        for(int j = 0; j < x; ++j) {
+            if(mazes[idx].blk[i][j] == 'A')
+                mazes[idx].blk[i][j] = '.';
+            else if(i == 0 || i == y-1 || j == 0 || j == x-1)
+                mazes[idx].blk[i][j] = '#';
+            else {
+                get_random_bytes(&rand_val, sizeof(rand_val));
+                mazes[idx].blk[i][j] = (rand_val % 2 == 0) ? '#' : '.';
+            }
+        }
+    }
+
+	for (int i = 1; i < y - 1; ++i) {
+        for (int j = 1; j < x - 1; ++j) {
+            if (mazes[idx].blk[i][j] == '#') {
+                bool has_wall_around = 
+                    mazes[idx].blk[i-1][j] == '#' || 
+                    mazes[idx].blk[i+1][j] == '#' || 
+                    mazes[idx].blk[i][j-1] == '#' ||
+                    mazes[idx].blk[i][j+1] == '#';  
+                
+                if (!has_wall_around) {
+                    mazes[idx].blk[i][j] = '.';
+                }
+            }
+        }
+    }
+
+    mazes[idx].blk[sy][sx] = 'S';
+    mazes[idx].blk[ey][ex] = 'E';
+    players[idx].x = sx;
+    players[idx].y = sy;
 }
 
 static void build_maze(int idx, int x, int y){
@@ -48,19 +120,27 @@ static void build_maze(int idx, int x, int y){
             mazes[idx].blk[i][j] = (i == 0 || i == y-1 || j == 0 || j == x-1) ? '#' : '.';
         }
     }
-	mazes[idx].blk[sx][sy] = '*';
-	mazes[idx].blk[ex][ey] = 'E';
+	mazes[idx].blk[1][1] = 'S';
+	mazes[idx].blk[y-2][x-2] = 'E';
 	players[idx].x = 1;
 	players[idx].y = 1;
-	return
+	return;
 }
 
-static bool is_created(){
+static bool is_created(void){
 	for(int i=0; i<3; i++){
 		if(pids[i] == current -> pid)
 			return true;
 	}
 	return false;
+}
+
+static int get_maze_id(void){
+	for(int i=0;i<3;i++){
+		if(pids[i] == current -> pid)
+			return i;
+	}
+	return -1;
 }
 
 static int maze_dev_open(struct inode *i, struct file *f) {
@@ -69,88 +149,219 @@ static int maze_dev_open(struct inode *i, struct file *f) {
 }
 
 static int maze_dev_close(struct inode *i, struct file *f) {
-	printk(KERN_INFO "maze: device closed.\n");
+	int idx = get_maze_id();
+	if(idx != -1){
+		pids[idx] = -1;
+		user_cnt--;
+	}
 	return 0;
 }
 
 static ssize_t maze_dev_read(struct file *f, char __user *buf, size_t len, loff_t *off) {
-	printk(KERN_INFO "maze: read %zu bytes @ %llu.\n", len, *off);
-	return len;
+    int idx = get_maze_id();
+    if (idx == -1)
+        return -ENOENT;
+
+    int maze_len = mazes[idx].w * mazes[idx].h;
+    char *maze_layout = kmalloc(maze_len, GFP_KERNEL);  // Use kmalloc to allocate memory
+    if (!maze_layout)
+        return -ENOMEM;  // Return if allocation failed
+
+    int count = 0;
+    for (int i = 0; i < mazes[idx].h; ++i) {
+        for (int j = 0; j < mazes[idx].w; ++j) {
+            maze_layout[count] = (mazes[idx].blk[i][j] == '#') ? 1 : 0;
+            count++;
+        }
+    }
+
+    // Make sure we don't copy more data than available or requested
+    size_t bytes_to_copy = min(maze_len - (size_t)(*off), len);
+    if (copy_to_user(buf, maze_layout + *off, bytes_to_copy)) {
+        kfree(maze_layout);  // Free allocated memory
+        return -EFAULT;
+    }
+
+    *off += bytes_to_copy;
+    kfree(maze_layout);  // Free allocated memory after use
+    return bytes_to_copy;
 }
 
 static ssize_t maze_dev_write(struct file *f, const char __user *buf, size_t len, loff_t *off) {
-	printk(KERN_INFO "maze: write %zu bytes @ %llu.\n", len, *off);
-	return len;
+    
+	if (len % sizeof(coord_t) != 0) {
+        return -EINVAL;  
+    }
+
+    int idx = get_maze_id();
+    if (idx == -1) {
+        return -EBADFD;
+    }
+
+    size_t num_moves = len / sizeof(coord_t);
+    coord_t *moves = kmalloc(len, GFP_KERNEL);
+    if (!moves) {
+        return -ENOMEM;
+    }
+
+    if (copy_from_user(moves, buf, len)) {
+        kfree(moves);
+        return -EBUSY;
+    }
+
+    for (size_t i = 0; i < num_moves; i++) {
+        coord_t move = moves[i];
+        if (!((move.x == -1 && move.y == 0) || (move.x == 1 && move.y == 0) ||
+              (move.x == 0 && move.y == -1) || (move.x == 0 && move.y == 1))) {
+            continue;
+        }
+
+        int new_x = players[idx].x + move.x;
+        int new_y = players[idx].y + move.y;
+        if (new_x >= 0 && new_x < mazes[idx].w && new_y >= 0 && new_y < mazes[idx].h) {
+            if (mazes[idx].blk[new_y][new_x] != '#') {
+                players[idx].x = new_x;
+                players[idx].y = new_y;
+            }
+        }
+    }
+
+    kfree(moves);
+    return len;
 }
 
 static long maze_dev_ioctl(struct file *fp, unsigned int cmd, unsigned long arg) {
 	coord_t coord;
+	int idx;
 	long ret = 0;
 	if(cmd != MAZE_CREATE){
 		if(!is_created())
-			return -EBUSY;
+			return -ENOENT;
 	}
     switch (cmd) {
         case MAZE_CREATE:
+			mutex_lock(&maze_mutex);
 			pid_t cur = current -> pid;
 			// check if a maze is already created
-			if (is_created())
+			if (is_created()){
+				mutex_unlock(&maze_mutex);
 				return -EEXIST;
+			}
 			// check is there a spare maze
-			if (user_cnt == _MAZE_MAXUSER)
+			if (user_cnt == _MAZE_MAXUSER){
+				printk(KERN_INFO "Too many users.\n");
+				mutex_unlock(&maze_mutex);
 				return ENOMEM;
+			}
+
             if (copy_from_user(&coord, (coord_t __user *)arg, sizeof(coord))) {
-                return -EBUSY;
+                mutex_unlock(&maze_mutex);
+				return -EBUSY;
             }
-			if(coord.x < 0 || coord.y < 0 || coord.x > _MAZE_MAXX || coord.y > _MAZE_MAXY)
+			if(coord.x < 0 || coord.y < 0 || coord.x > _MAZE_MAXX || coord.y > _MAZE_MAXY){
+				mutex_unlock(&maze_mutex);
 				return -EINVAL;
+			}
 			//assign a maze
 			for(int i=0; i<3; i++){
-				if(pid[i] == -1){
-					pid[i] = cur;
+				if(pids[i] == -1){
+					pids[i] = cur;
 					user_cnt ++;
 					if(debug)
 						build_maze(i, coord.x, coord.y);
 					else
 						random_build_maze(i, coord.x, coord.y);
-
 					break;
 				}
 			}
-
-            printk(KERN_INFO "create maze done.");
-			created = true;
+			mutex_unlock(&maze_mutex);
             break;
 
         case MAZE_RESET:
-            printk(KERN_INFO "Resetting the maze.\n");
+			idx = get_maze_id();
+			if(idx == -1){
+				return -ENOENT;
+			}
+			players[idx].x = mazes[idx].sx;
+			players[idx].y = mazes[idx].sy;
             break;
 
         case MAZE_DESTROY:
-            printk(KERN_INFO "Destroying the maze.\n");
+			idx = get_maze_id();
+			pids[idx] = -1;
+			user_cnt--;
             break;
 
         case MAZE_GETSIZE:
+			idx = get_maze_id();
+			if(idx == -1){// don't need this
+				return -ENOENT;
+			}
+			coord.x = mazes[idx].w;
+			coord.y = mazes[idx].h;
             if (copy_to_user((coord_t __user *)arg, &coord, sizeof(coord))) {
                 return -EFAULT;
             }
-            printk(KERN_INFO "Getting maze size.\n");
             break;
 
         case MAZE_MOVE:
+			idx = get_maze_id();
+			if(idx == -1){
+				return -ENOENT;
+			}
             if (copy_from_user(&coord, (coord_t __user *)arg, sizeof(coord))) {
                 return -EFAULT;
             }
-            printk(KERN_INFO "Moving to position (%d, %d).\n", coord.x, coord.y);
+			if (!((coord.x == -1 && coord.y == 0) ||
+				(coord.x == 1 && coord.y == 0)  || 
+				(coord.x == 0 && coord.y == -1) || 
+				(coord.x == 0 && coord.y == 1))) { 
+				return ret;
+			}
+			int tempx = players[idx].x + coord.x;
+			int tempy = players[idx].y + coord.y;
+			if(!(tempx < 1 || tempx >= mazes[idx].w 
+				|| tempy < 1 || tempy >= mazes[idx].h)){
+					if(mazes[idx].blk[tempy][tempx] != '#'){
+						players[idx].x = tempx;
+						players[idx].y = tempy;
+					}
+				}
             break;
 
         case MAZE_GETPOS:
-        case MAZE_GETSTART:
-        case MAZE_GETEND:
+			idx = get_maze_id();
+			if(idx == -1){
+				return -ENOENT;
+			}
+			coord.x = players[idx].x;
+			coord.y = players[idx].y;
             if (copy_to_user((coord_t __user *)arg, &coord, sizeof(coord))) {
                 return -EFAULT;
             }
-            printk(KERN_INFO "Getting maze position/start/end.\n");
+            break;
+		
+        case MAZE_GETSTART:
+			idx = get_maze_id();
+			if(idx == -1){
+				return -ENOENT;
+			}
+			coord.x = mazes[idx].sx;
+			coord.y = mazes[idx].sy;
+            if (copy_to_user((coord_t __user *)arg, &coord, sizeof(coord))) {
+                return -EFAULT;
+            }
+            break;
+        case MAZE_GETEND:
+            idx = get_maze_id();
+			if(idx == -1){
+				return -ENOENT;
+			}
+			coord.x = mazes[idx].ex;
+			coord.y = mazes[idx].ey;
+            if (copy_to_user((coord_t __user *)arg, &coord, sizeof(coord))) {
+                return -EFAULT;
+            }
             break;
 
         default:
@@ -169,25 +380,27 @@ static const struct file_operations maze_dev_fops = {
 };
 
 static int maze_proc_read(struct seq_file *m, void *v) {
-	char *content="";
 	for(int i=0; i<3; i++){
 		if(pids[i] == -1){
 			seq_printf(m, "#0%d: vacancy\n\n", i);
 		}
 		else{
-			seq_printf(m, "#0%d:\n pid %d - [%d x %d]: (%d, %d) -> (%d, %d) @ (%d %d)", i, pids[i], mazes[i].w, mazes[i].h, mazes[i].sx, mazes[i].sy, mazes[i].ex, mazes[i].ey, players[i].x, players[i].y);
+			seq_printf(m, "#0%d:\n pid %d - [%d x %d]: (%d, %d) -> (%d, %d) @ (%d %d)\n", i, pids[i], mazes[i].w, mazes[i].h, mazes[i].sx, mazes[i].sy, mazes[i].ex, mazes[i].ey, players[i].x, players[i].y);
 
             for(int y = 0; y < mazes[i].h; y++) {
 				seq_printf(m, "- %03d: ", y);
                 for(int x = 0; x < mazes[i].w; x++) {
-                    seq_printf(m, "%c", mazes[i].blk[y][x]);
+					if(x == players[i].x && y == players[i].y){
+						seq_printf(m, "*");
+					}
+					else
+	                    seq_printf(m, "%c", mazes[i].blk[y][x]);
                 }
                 seq_printf(m, "\n");
             }
             seq_printf(m, "\n");
 		}
 	}
-    seq_printf(m, "%s", maze_content);
     return 0;
 }
 
@@ -253,5 +466,5 @@ module_init(maze_init);
 module_exit(maze_cleanup);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Chun-Ying Huang");
-MODULE_DESCRIPTION("The unix programming course demo kernel module.");
+MODULE_AUTHOR("jerryyyyy708");
+MODULE_DESCRIPTION("Lab2");
