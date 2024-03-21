@@ -252,7 +252,7 @@ static long maze_dev_ioctl(struct file * fp, unsigned int cmd, unsigned long arg
         if (user_cnt == _MAZE_MAXUSER) {
             printk(KERN_INFO "Too many users.\n");
             mutex_unlock( & maze_mutex);
-            return ENOMEM;
+            return -ENOMEM;
         }
 
         if (copy_from_user( & coord, (coord_t __user * ) arg, sizeof(coord))) {
