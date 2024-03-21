@@ -24,11 +24,22 @@ static int pids[3] = {-1,-1,-1};
 maze_t mazes[3];
 coord_t players[3];
 bool debug = false;
+int last_pid = -1;
 
 static void random_build_maze(int idx, int x, int y) {
     unsigned int rand_val;
     mazes[idx].w = x;
     mazes[idx].h = y;
+    bool x3 = false;
+    bool y3 = false;
+    if(x == 3){
+        x3 = true;
+        x++;
+    }
+    if(y == 3){
+        y3 = true;
+        y++;
+    }
 
     get_random_bytes( & rand_val, sizeof(rand_val));
     unsigned int sx = 1 + (rand_val % (x - 3));
@@ -42,6 +53,17 @@ static void random_build_maze(int idx, int x, int y) {
         get_random_bytes( & rand_val, sizeof(rand_val));
         ey = 1 + (rand_val % (y - 3));
     } while (sx == ex && sy == ey);
+
+    if(x3){
+        ex = 1;
+        sx = 1;
+        x = 3;
+    }
+    if(y3){
+        ey = 1;
+        sy = 1;
+        y = 3;
+    }
 
     mazes[idx].sx = sx;
     mazes[idx].sy = sy;
@@ -144,7 +166,7 @@ static int get_maze_id(void) {
 }
 
 static int maze_dev_open(struct inode * i, struct file * f) {
-    printk(KERN_INFO "maze: device opened.\n");
+    //printk(KERN_INFO "maze: device opened.\n");
     return 0;
 }
 
@@ -155,6 +177,7 @@ static int maze_dev_close(struct inode * i, struct file * f) {
         pids[idx] = -1;
         user_cnt--;
     }
+    //printk(KERN_INFO "current users: %d, PID closed: %d\n", user_cnt, current -> pid);
     mutex_unlock(&maze_mutex);
     return 0;
 }
@@ -252,7 +275,7 @@ static long maze_dev_ioctl(struct file * fp, unsigned int cmd, unsigned long arg
         }
         // check is there a spare maze
         if (user_cnt == _MAZE_MAXUSER) {
-            printk(KERN_INFO "Too many users.\n");
+            //printk(KERN_INFO "Too many users PID: %d.\n", current -> pid);
             mutex_unlock( & maze_mutex);
             return -ENOMEM;
         }
@@ -277,6 +300,7 @@ static long maze_dev_ioctl(struct file * fp, unsigned int cmd, unsigned long arg
                 break;
             }
         }
+        //printk(KERN_INFO "current users: %d. PID: %d\n", user_cnt, cur);
         mutex_unlock( & maze_mutex);
         break;
 
@@ -290,9 +314,11 @@ static long maze_dev_ioctl(struct file * fp, unsigned int cmd, unsigned long arg
         break;
 
     case MAZE_DESTROY:
+        mutex_lock(&maze_mutex);
         idx = get_maze_id();
         pids[idx] = -1;
         user_cnt--;
+        mutex_unlock(&maze_mutex);
         break;
 
     case MAZE_GETSIZE:
@@ -440,7 +466,7 @@ static int __init maze_init(void) {
     // create proc
     proc_create("maze", 0, NULL, & maze_proc_fops);
 
-    printk(KERN_INFO "maze: initialized.\n");
+    //printk(KERN_INFO "maze: initialized.\n");
     return 0; // Non-zero return means that the module couldn't be loaded.
 
     release_device:
@@ -460,7 +486,7 @@ static void __exit maze_cleanup(void) {
     class_destroy(clazz);
     unregister_chrdev_region(devnum, 1);
 
-    printk(KERN_INFO "maze: cleaned up.\n");
+    //printk(KERN_INFO "maze: cleaned up.\n");
 }
 
 module_init(maze_init);
