@@ -149,11 +149,13 @@ static int maze_dev_open(struct inode * i, struct file * f) {
 }
 
 static int maze_dev_close(struct inode * i, struct file * f) {
+    mutex_lock(&maze_mutex);
     int idx = get_maze_id();
     if (idx != -1) {
         pids[idx] = -1;
         user_cnt--;
     }
+    mutex_unlock(&maze_mutex);
     return 0;
 }
 
