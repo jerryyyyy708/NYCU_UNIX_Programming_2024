@@ -1,16 +1,12 @@
-obj-m += hellomod.o
+obj-m     += maze.o
 ccflags-y += -DEXPORT_SYMTAB
 
-# Target for compiling the kernel module
-all: hello_module hello
-
-hello_module:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
-
-# Target for compiling the userspace application
-hello: hello.c
-	gcc -o hello hello.c -Wall
+all:
+	make -C ../dist/modulebuild M=$(PWD) modules
 
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-	rm -f hello
+	make -C ../dist/modulebuild M=$(PWD) clean
+
+install: all
+	mkdir -p ../rootfs/modules
+	cp maze.ko ../rootfs/modules
