@@ -1,10 +1,11 @@
+# Makefile
 all: logger main
 
-logger: logger.c
-	gcc-12 -fPIC -shared logger.c -o logger.so -ldl
+logger: logger.c filemap.c filemap.h
+	gcc -fPIC -shared logger.c filemap.c -o logger.so -ldl -I.
 
 main: main.c
-	gcc-12 main.c -o main
+	gcc main.c -o main
 
 clean:
-	rm -f main logger.so
+	rm -f logger logger.so file.txt
