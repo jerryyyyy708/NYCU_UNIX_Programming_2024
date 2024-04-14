@@ -9,10 +9,7 @@ static void * __stored_ptr = NULL;
 
 int
 maze_init() {
-	printf("UP112_GOT_MAZE_CHALLENGE\n");
 	fprintf(stderr, "MAZE: library init - stored pointer = %p.\n", __stored_ptr);
-	void *ptr = maze_get_ptr();
-    printf("SOLVER: _main = %p\n", ptr);
 	return 0;
 }
 
