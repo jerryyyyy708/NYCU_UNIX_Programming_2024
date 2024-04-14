@@ -10,6 +10,7 @@
 #include <fnmatch.h>
 #include <unistd.h>
 #include <limits.h>
+#include <libgen.h>
 #include "filemap.h"
 
 static FILE *(*original_fopen)(const char *, const char *) = NULL;
@@ -44,6 +45,43 @@ int is_marker(const char *line, const char *marker, const char *tag) {
     char expected[255];
     sprintf(expected, "%s %s", marker, tag);
     return strncmp(line, expected, strlen(expected)) == 0;
+}
+
+char *escape_string(const char *input) {
+    if (input == NULL) return NULL;
+    
+    size_t output_length = 0;
+    const char *p = input;
+
+    while (*p) {
+        switch (*p) {
+            case '\n': output_length += 2; break; // \n -> \\n
+            case '\t': output_length += 2; break; // \t -> \\t
+            case '\r': output_length += 2; break; // \r -> \\r
+            case '\\': output_length += 2; break;
+            default: output_length++; break;
+        }
+        p++;
+    }
+    
+    char *output = malloc(output_length + 1);
+    if (!output) return NULL;
+    
+    char *q = output;
+    p = input;
+    while (*p) {
+        switch (*p) {
+            case '\n': *q++ = '\\'; *q++ = 'n'; break;
+            case '\t': *q++ = '\\'; *q++ = 't'; break;
+            case '\r': *q++ = '\\'; *q++ = 'r'; break;
+            case '\\': *q++ = '\\'; *q++ = '\\'; break;
+            default: *q++ = *p; break;
+        }
+        p++;
+    }
+    *q = '\0';
+    
+    return output;
 }
 
 char *resolvePath(char *path) {
@@ -88,6 +126,30 @@ char *resolvePath(char *path) {
     return resolvedPath;
 }
 
+char* get_log_filename(const char *path) {
+    char tmp[PATH_MAX];
+    if (realpath(path, tmp) == NULL) {
+        perror("Error resolving real path");
+        return NULL;
+    }
+
+    // Use basename to get the final component of the path
+    char *base = basename(tmp);  // This modifies tmp, but we're done with it after this
+
+    // Duplicate the basename to remove the extension
+    char *simple = strdup(base);
+    if (!simple) {
+        perror("Failed to duplicate basename");
+        return NULL;
+    }
+
+    char *dot = strrchr(simple, '.');
+    if (dot) {
+        *dot = '\0';  // Remove extension
+    }
+    return simple;
+}
+
 char **get_black_list(char *API) {
     FILE *file = original_fopen(config, "r");
     if (!file) {
@@ -121,7 +183,6 @@ char **get_black_list(char *API) {
 
         // If we are in the correct section, add the line to the list
         if (in_section) {
-            // Resize the array to hold one more pointer
             char **new_blacklist = realloc(blacklist, (count + 1) * sizeof(char *));
             if (!new_blacklist) {
                 perror("Failed to realloc memory");
@@ -130,12 +191,17 @@ char **get_black_list(char *API) {
                 return NULL;
             }
             blacklist = new_blacklist;
-            char *resolved_line = resolvePath(line);
-            // printf("%s\n", resolved_line);
-            // Allocate memory for the new blacklist item and copy it over
-            blacklist[count] = strdup(resolved_line);
-            if (!blacklist[count]) {
-                perror("Failed to duplicate string");
+            char *stored_line;
+            
+            // Only resolve the path if API is "open" or "write"
+            if (strcmp(API, "open") == 0 || strcmp(API, "write") == 0) {
+                stored_line = resolvePath(line);
+            } else {
+                stored_line = strdup(line);
+            }
+
+            if (!stored_line) {
+                perror("Failed to process line");
                 // Free previously allocated memory before returning
                 for (int i = 0; i < count; i++) {
                     free(blacklist[i]);
@@ -144,6 +210,8 @@ char **get_black_list(char *API) {
                 fclose(file);
                 return NULL;
             }
+
+            blacklist[count] = stored_line;
             count++;
         }
     }
@@ -191,88 +259,176 @@ void free_blacklist(char **blacklist) {
     }
 }
 
-char *resolve_path(const char *path) {
-    char *resolved_path = malloc(PATH_MAX);
-    if (!resolved_path) {
+int check_file_blacklist(char **blacklist, char * pathname){
+    if (!blacklist) {
+        return 0; // If blacklist is NULL, treat it as not blocked
+    }
+
+    char *real_path = resolvePath(pathname);
+    if (!real_path) {
+        return 0; // Treat as not blocked if path resolution fails
+    }
+
+    for (char **item = blacklist; *item != NULL; item++) {
+        if (fnmatch(*item, real_path, FNM_PATHNAME) == 0){
+            free(real_path);
+            return 1;
+        }
+    }
+    free(real_path);
+    return 0;
+}
+
+int check_addr_blacklist(char **blacklist, const char *addr) {
+    if (blacklist == NULL || addr == NULL) {
+        return 0;
+    }
+
+    for (char **item = blacklist; *item != NULL; item++) {
+        if (strcmp(*item, addr) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+FILE* get_log_file(const char* filename, char* API) {
+    char* base_filename = get_log_filename(filename);
+    static char log_filename[PATH_MAX];
+    snprintf(log_filename, PATH_MAX, "%d-%s-%s.log", getpid(), base_filename, API);
+    FILE *log_file = original_fopen(log_filename, "a");
+    if (!log_file) {
+        perror("Failed to open log file");
         return NULL;
     }
-    if (realpath(path, resolved_path) == NULL) {
-        free(resolved_path);
-        return strdup(path);
-    }
-    return resolved_path;
+    return log_file;
 }
 
 FILE *fopen(const char *pathname, const char *mode) {
+    //contains real address
     char **blacklist = get_black_list("open");
-    int blocked = 0;
-
-    char *real_path = resolve_path(pathname);
-    for (char **item = blacklist; *item != NULL; item++) {
-        if (fnmatch(*item, real_path, FNM_PATHNAME) == 0) {
-            blocked = 1;
-            break;
-        }
-    }
+    int blocked = check_file_blacklist(blacklist, (char *)pathname);
 
     //blocked output
     if (blocked) {
         fprintf(stderr, "[logger] fopen(\"%s\", \"%s\") = 0x0\n", pathname, mode);
         errno = EACCES;
-        free(real_path);
         return NULL;
     }
     
     //success open
-    FILE *fp = original_fopen(real_path, mode);
+    FILE *fp = original_fopen(pathname, mode);
     addToFileMap(map, fp, pathname);
     fprintf(stderr, "[logger] fopen(\"%s\", \"%s\") = %p\n", pathname, mode, fp);
-    free(real_path);
     return fp;
 }
 
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
-    size_t result = original_fread(ptr, size, nmemb, stream);
-    // if (is_keyword_blocked(ptr, result)) {
-    //     errno = EACCES;
-    //     return 0;
-    // }
-    // log_read(ptr, result, stream);  // Log the read data to a specific file
+    char* filename = findFilenameByFile(map, stream);
+    char** blacklist = get_black_list("read");
+
+    void *temp = malloc(size * nmemb);
+    size_t result = original_fread(temp, size, nmemb, stream);
+    int blocked = 0;
+
+    for (char **item = blacklist; *item != NULL; item++) {
+        if (memmem(temp, size * result, *item, strlen(*item)) != NULL) {
+            blocked = 1;  // Keyword found
+        }
+    }
+
+    if(blocked){
+        fprintf(stderr, "[logger] fread(%p, %ld, %ld, %p) = 0\n", ptr, size, nmemb, stream);
+        errno = EACCES;
+        free(temp);
+        return 0;
+    }
+
+    FILE *log_file = get_log_file(filename, "read");
+    if (log_file) {
+        // Log the data that is being written
+        original_fwrite(temp, size, nmemb, log_file);
+        fclose(log_file);
+    }
+
+    memcpy(ptr, temp, size * result);
+    fprintf(stderr, "[logger] fread(%p, %ld, %ld, %p) = %ld\n", ptr, size, nmemb, stream, result);
+    free(temp);
     return result;
 }
 
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
-    char *filename = findFilenameByFile(map, stream);
-    printf("%s\n", filename);
+    char* filename = findFilenameByFile(map, stream);
+    char** blacklist = get_black_list("write");
+    int blocked = check_file_blacklist(blacklist, filename);
+
+    if (blocked) {
+        char *p = escape_string(ptr);
+        fprintf(stderr, "[logger] fwrite(\"%s\", %ld, %ld, %p) = 0\n", p, size, nmemb, stream);
+        errno = EACCES;
+        free(p);
+        return 0;
+    }
     size_t result = original_fwrite(ptr, size, nmemb, stream);
-    // log_write(ptr, result, stream);  // Log the written data
+
+    FILE *log_file = get_log_file(filename, "write");
+    if (log_file) {
+        // Log the data that is being written
+        original_fwrite(ptr, size, nmemb, log_file);
+        fclose(log_file);
+    }
+
+    char *p = escape_string(ptr);
+    fprintf(stderr, "[logger] fwrite(\"%s\", %ld, %ld, %p) = %ld\n", p, size, nmemb, stream, result);
+    free(p);
+
     return result;
 }
 
 int system(const char *command) {
-    fprintf(stderr, "[logger] system(\"%s\")\n", command);
-    return original_system(command);
+    int result = original_system(command);
+    fprintf(stderr, "[logger] system(\"%s\") = %d\n", command, result);
+    return result;
 }
 
 int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res) {
-    // if (is_hostname_blocked(node)) {
-    //     return EAI_NONAME;
-    // }
-    fprintf(stderr, "[logger] getaddrinfo(\"%s\", \"%s\")\n", node, service);
-    return original_getaddrinfo(node, service, hints, res);
+    // Retrieve the blacklist for DNS resolution
+    char** blacklist = get_black_list("getaddrinfo");
+    int blocked = check_addr_blacklist(blacklist, node);
+    
+    if (blocked) {
+        fprintf(stderr, "[logger] getaddrinfo(\"%s\", %s, %p, %p) = -1\n", node, service ? service : "(nil)", (void *)hints, (void *)res);
+        return EAI_NONAME; 
+    }
+
+    // Call the original getaddrinfo function if not blocked
+    int result = original_getaddrinfo(node, service, hints, res);
+    fprintf(stderr, "[logger] getaddrinfo(\"%s\", %s, %p, %p) = %d\n", node, service ? service : "(nil)", (void *)hints, (void *)res, result);
+    return result;
 }
 
 int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    char** blacklist = get_black_list("connect");
+    char ip[INET_ADDRSTRLEN] = {0};
+    int blocked = 0;
     if (addr->sa_family == AF_INET) {
         struct sockaddr_in *in_addr = (struct sockaddr_in *)addr;
-        char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(in_addr->sin_addr), ip, INET_ADDRSTRLEN);
-
-        // if (is_ip_blocked(ip)) {
-        //     errno = ECONNREFUSED;
-        //     return -1;
-        // }
+        blocked = check_addr_blacklist(blacklist, ip);
     }
-    fprintf(stderr, "[logger] connect(%d, \"%s\")\n", sockfd, inet_ntoa(((struct sockaddr_in *)addr)->sin_addr));
-    return original_connect(sockfd, addr, addrlen);
+    else
+        return -1;
+    
+    int result;
+
+    if (blocked) {
+        errno = ECONNREFUSED;
+        result = -1;
+    } else {
+        result = original_connect(sockfd, addr, addrlen);  // Perform the actual connect if not blocked
+    }
+
+    // Log the connect attempt and result in a single fprintf statement
+    fprintf(stderr, "[logger] connect(%d, \"%s\", %u) = %d\n", sockfd, ip, addrlen, result);
+    return result;
 }

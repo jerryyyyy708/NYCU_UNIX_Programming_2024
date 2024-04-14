@@ -1,4 +1,3 @@
-// filemap.c
 #include "filemap.h"
 #include <stdlib.h>
 #include <string.h>
