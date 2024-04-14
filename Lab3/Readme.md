@@ -29,3 +29,14 @@ make run
 ```
 python3 submit.py [.so]
 ```
+
+## TODO
+1. 找到 GOT 中各個 MOVE(N) 的位置。
+2. 把它變成 writable。
+3. 把要移動到的位置改成 move_{direction} 的位置。
+
+### 目前想法
+1. 先產出 move 的地址列表存到 txt 裡。
+2. 用 for loop 遍歷 directions，每跑一個就從 txt 讀一行地址來改 table。
+
+可以先跑一個本地的試試看。
