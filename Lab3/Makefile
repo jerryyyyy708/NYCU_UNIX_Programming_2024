@@ -19,12 +19,18 @@ injection.o: injection.c
 
 # Clean target
 clean:
-	rm -f $(LIB_TARGET) $(LIB_OBJECTS) *.so
+	rm -f $(LIB_TARGET) $(LIB_OBJECTS) *.so got.txt
 
 .PHONY: all clean
+
+submit:
+	python3 submit.py libmaze.so
 
 run:
 	cp libmaze.so ./src/; \
 	cd ./src; \
 	make preload; \
 	cd ..;
+
+table:
+	python3 generate_got_table.py
