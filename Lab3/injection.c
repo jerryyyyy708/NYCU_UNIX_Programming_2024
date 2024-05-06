@@ -358,7 +358,6 @@ void dfs(int x, int y, int from_dir) {
 
     if (!found && from_dir != -1) {
         step_count--;
-        visited[y][x] = 0;
     }
 }
 
@@ -368,7 +367,7 @@ void inject_table(){
     long pagesize = sysconf(_SC_PAGESIZE);
     print_directions();
     for(int i=0; i<step_count+1;i++){
-        uintptr_t page_start = (uintptr_t)got_function_addresses[i] & ~(pagesize - 1);
+        uintptr_t page_start = (uintptr_t)got_function_addresses[i] & ~(pagesize - 1);// &00000000000 -> align page
 
         // Temporarily change the protection to read-write-execute
         if (mprotect((void*)page_start, pagesize, PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {

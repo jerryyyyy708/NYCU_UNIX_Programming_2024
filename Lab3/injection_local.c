@@ -54,13 +54,8 @@ void injection_init(void) {
     }
 }
 
-void *get_page_aligned_address(void *addr) {
-    long pagesize = sysconf(_SC_PAGESIZE);
-    return (void *)((uintptr_t)addr & ~(pagesize - 1));
-}
-
 void set_main(){
-    unsigned int offset = 0x1b7a9;
+    unsigned int offset = 0x1b7a9; //get from .py
     main_base = __stored_ptr - offset;
 }
 
@@ -130,7 +125,6 @@ void dfs(int x, int y, int from_dir) {
 
     if (!found && from_dir != -1) {
         step_count--;
-        visited[y][x] = 0;
     }
 }
 

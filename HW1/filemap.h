@@ -16,7 +16,5 @@ typedef struct {
 FileMap* createFileMap();
 void addToFileMap(FileMap *map, FILE *file, const char *filename);
 char* findFilenameByFile(FileMap *map, FILE *file);
-void removeFromFileMap(FileMap *map, FILE *file);
-void freeFileMap(FileMap *map);
 
 #endif // FILEMAP_H

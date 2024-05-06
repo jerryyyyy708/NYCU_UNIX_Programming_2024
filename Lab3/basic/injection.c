@@ -85,7 +85,6 @@ void dfs(int x, int y, int from_dir) {
 
     if (!found && from_dir != -1) {
         step_count--;
-        visited[y][x] = 0;
     }
 }
 

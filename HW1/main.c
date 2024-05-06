@@ -8,21 +8,20 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Default values
     char *sopath = "./logger.so"; 
     char *output = NULL;
 
     int opt;
-    opterr = 0;  // Turn off automatic error messages from getopt
+    opterr = 0;  // disable auto error
 
     // Use a variable to track where the command starts in argv
-    int command_index = 2;
+    int command_index = 2; // argv0, config
 
-    while ((opt = getopt(argc - 1, argv + 1, "p:o:")) != -1) {
+    while ((opt = getopt(argc - 1, argv + 1, "p:o:")) != -1) {// get opt from -p and -o, skip filename
         switch (opt) {
             case 'p':
                 sopath = optarg;
-                command_index += 2;
+                command_index += 2; //-p and arg
                 break;
             case 'o':
                 output = optarg;
@@ -34,19 +33,18 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // After processing all options, the remaining arguments start from argv[command_index]
+    // no command
     if (argc <= command_index) {
         fprintf(stderr, "Error: Command not specified.\nUsage: %s <config file> [-o file] [-p sopath] <command> [arg1 arg2 ...]\n", argv[0]);
         return EXIT_FAILURE;
     }
     
-    setenv("LOGGER_CONFIG_FILE", argv[1], 1);
-    setenv("LD_PRELOAD", sopath, 1);
+    setenv("LOGGER_CONFIG_FILE", argv[1], 1); //config filename
+    setenv("LD_PRELOAD", sopath, 1); //.so file
     if (output) {
-        freopen(output, "w", stderr);
+        freopen(output, "w", stderr); //replace stderr with output file
     }
 
-    // Prepare arguments for execvp
     execvp(argv[command_index], &argv[command_index]);
     perror("execvp failed");
     return EXIT_FAILURE;

@@ -34,37 +34,3 @@ char* findFilenameByFile(FileMap *map, FILE *file) {
     }
     return NULL;
 }
-
-void removeFromFileMap(FileMap *map, FILE *file) {
-    if (map == NULL || map->head == NULL) return;
-
-    FileMapNode *current = map->head;
-    FileMapNode *prev = NULL;
-
-    while (current != NULL) {
-        if (current->file == file) {
-            if (prev == NULL) {
-                map->head = current->next;
-            } else {
-                prev->next = current->next;
-            }
-            free(current->filename);
-            free(current);
-            return;
-        }
-        prev = current;
-        current = current->next;
-    }
-}
-
-void freeFileMap(FileMap *map) {
-    if (map == NULL) return;
-    FileMapNode *current = map->head;
-    while (current != NULL) {
-        FileMapNode *next = current->next;
-        free(current->filename);
-        free(current);
-        current = next;
-    }
-    free(map);
-}
