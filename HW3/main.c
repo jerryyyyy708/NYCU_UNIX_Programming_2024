@@ -12,8 +12,47 @@
 #include <capstone/capstone.h>
 #include <sys/user.h>
 
+#define MB 10 //max breakpoints
 bool loaded = false;
 pid_t child_pid = 0;
+
+struct breakpoint {
+    uint64_t addr;
+    long original_data;  // 存储原始指令数据
+    bool enabled;
+};
+
+struct breakpoint breakpoints[MB];
+int nbp = 0;
+
+bool check_bp() {
+    struct user_regs_struct regs;
+    ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+    uint64_t pc = regs.rip; //next instruction
+
+    for (int i = 0; i < nbp; i++) {
+        if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+            printf("** Hit breakpoint at 0x%lx\n", pc);
+            // 处理断点逻辑，如恢复原始指令等
+            return true;
+        }
+    }
+    return false;
+}
+
+void set_breakpoint(uint64_t addr) {
+    if (nbp >= MB) {
+        printf("** Maximum number of breakpoints reached.\n");
+        return;
+    }
+
+    long data = ptrace(PTRACE_PEEKTEXT, child_pid, (void*)addr, NULL);
+    breakpoints[nbp].addr = addr;
+    breakpoints[nbp].original_data = data;
+    breakpoints[nbp].enabled = true;
+    printf("** set a breakpoint at 0x%lx.\n", addr);
+    nbp++;
+}
 
 void disassemble_instruction(uint64_t address) {
     csh handle;
@@ -64,7 +103,7 @@ void load_program(const char* program) {
     }
 
     child_pid = fork();
-    if (child_pid == 0) {  // 子进程
+    if (child_pid == 0) {
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
         execl(program, program, NULL);
         perror("execl");
@@ -80,7 +119,6 @@ void load_program(const char* program) {
             read(fd, &ehdr, sizeof(Elf64_Ehdr));
             printf("** program '%s' loaded. entry point 0x%lx.\n", program, ehdr.e_entry);
             close(fd);
-
             loaded = true;
             disassemble_instruction(ehdr.e_entry);
         }
@@ -105,11 +143,8 @@ void si() {
     } else if (WIFSTOPPED(status)) {
         // 获取当前寄存器状态，特别是指令指针寄存器
         ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+        check_bp();
         uint64_t pc = regs.rip;  // Program Counter (RIP 寄存器的值)
-
-        // 可选：检查是否命中断点（未实现的断点管理逻辑）
-
-        // 反汇编并显示当前指令
         disassemble_instruction(pc);
     }
 }
@@ -129,7 +164,13 @@ void handle_command(char* command) {
         program[newline] = '\0';
         load_program(program);
     } else if (strncmp(command, "break", 5) == 0) {
-        printf("** Command not implemented yet.\n");
+        char* addr_str = command + 6;
+        int newline=0;
+        while(addr_str[newline] != '\n')
+            newline++;
+        addr_str[newline] = '\0';
+        uint64_t addr = strtoul(addr_str, NULL, 16);
+        set_breakpoint(addr);
     } else if (strncmp(command, "cont", 4) == 0 && loaded) {
         ptrace(PTRACE_CONT, child_pid, NULL, NULL);
     } else if (strncmp(command, "quit", 4) == 0) {
@@ -138,6 +179,19 @@ void handle_command(char* command) {
     }
     else if (strncmp(command, "si", 2) == 0){
         si();
+    }
+    else if (strncmp(command, "info break", 10) == 0){
+        if(nbp == 0)
+            printf("** no breakpoints.\n");
+        else{
+            printf("Num\tAddress\n");
+            for(int i=0; i<MB; i++){
+                if(breakpoints[i].enabled){
+                    printf("%d\t0x%lx\n", i, breakpoints[i].addr);
+                }
+            }
+        }
+
     }
     else {
         printf("Unknown command.\n");
