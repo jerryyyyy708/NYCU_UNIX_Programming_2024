@@ -8,7 +8,7 @@ context.arch = 'amd64'
 context.os = 'linux'
 
 exe = './bof1'
-port = 10259
+port = 10258
 
 elf = ELF(exe)
 off_main = elf.symbols[b'main']
