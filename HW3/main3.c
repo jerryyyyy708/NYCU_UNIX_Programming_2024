@@ -124,8 +124,13 @@ void cont() {
     uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+            int status;
             temp = i;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
+            waitpid(child_pid, &status, 0);
+            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
+            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
             break;
         }
     }
@@ -155,12 +160,6 @@ void cont() {
         printf("** the target program terminated.\n");
         exit(0);
         loaded = false;
-    }
-
-    //restore temp, maybe need to restore first or use single step
-    if(temp != -1 && loaded){
-        long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-        ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
     }
 }
 
@@ -300,11 +299,16 @@ void trace_syscall() {
     ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
     int temp = -1;
 
-    uint64_t pc = regs.rip;  //check if next instruction is breakpoint, skip if yes (temp is for restore breakpoint)
+    uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+            int status;
             temp = i;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
+            waitpid(child_pid, &status, 0);
+            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
+            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
             break;
         }
     }
@@ -361,13 +365,6 @@ void trace_syscall() {
         }
 
         entering = 1 - entering;
-    }
-
-
-    if(temp != -1 && loaded){
-        //restore temp, int3 x 2
-        long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-        ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
     }
 }
 

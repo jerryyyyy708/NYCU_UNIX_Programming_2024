@@ -124,8 +124,13 @@ void cont() {
     uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+            int status;
             temp = i;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
+            waitpid(child_pid, &status, 0);
+            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
+            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
             break;
         }
     }
@@ -142,12 +147,10 @@ void cont() {
         for (int i = 0; i < nbp; i++) {
             if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
                 printf("** Hit breakpoint at 0x%lx\n", pc);
-                ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+                reset_bp();
                 regs.rip = pc;
                 ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);//same, might have problem if too close
                 disassemble_instruction(pc);
-                long int3_instruction = (breakpoints[i].original_data & ~0xFF) | 0xCC;
-                ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, int3_instruction);
                 break;
             }
         }
@@ -155,12 +158,6 @@ void cont() {
         printf("** the target program terminated.\n");
         exit(0);
         loaded = false;
-    }
-
-    //restore temp, maybe need to restore first or use single step
-    if(temp != -1 && loaded){
-        long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-        ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
     }
 }
 
@@ -300,11 +297,16 @@ void trace_syscall() {
     ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
     int temp = -1;
 
-    uint64_t pc = regs.rip;  //check if next instruction is breakpoint, skip if yes (temp is for restore breakpoint)
+    uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+            int status;
             temp = i;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
+            waitpid(child_pid, &status, 0);
+            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
+            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
             break;
         }
     }
@@ -331,13 +333,11 @@ void trace_syscall() {
                 notin = false;
                 printf("** Hit breakpoint at 0x%lx\n", pc);
                 //temperary restore and show address (too close might have problem)
-                ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+                reset_bp();
                 regs.rip = pc;
                 ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);
                 disassemble_instruction(pc);
                 //restore breakpoint, int3 x 1
-                long int3_instruction = (breakpoints[i].original_data & ~0xFF) | 0xCC;
-                ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, int3_instruction);
                 break;
             }
         }
@@ -352,23 +352,19 @@ void trace_syscall() {
             // entering = 1 -> enter syscall
             printf("** enter a syscall(%lld) at 0x%llx\n", regs.orig_rax, regs.rip - 2);
             uint64_t pc = regs.rip - 2;
+            reset_bp();
             disassemble_instruction(pc);
         } else {
             // entering = 0 -> leave syscall
             printf("** leave a syscall(%lld) = %lld at 0x%llx\n", regs.orig_rax, regs.rax, regs.rip - 2);
             uint64_t pc = regs.rip - 2;
+            reset_bp();
             disassemble_instruction(pc);
         }
 
         entering = 1 - entering;
     }
 
-
-    if(temp != -1 && loaded){
-        //restore temp, int3 x 2
-        long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-        ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
-    }
 }
 
 
@@ -477,6 +473,7 @@ int main(int argc, char *argv[]) {
             printf("\n");
             break;  // If input ends, exit loop
         }
+        set_bp();
         // Handle user input command
         handle_command(command);
     }
