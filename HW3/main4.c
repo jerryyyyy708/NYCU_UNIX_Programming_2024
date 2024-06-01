@@ -117,30 +117,7 @@ void disassemble_instruction(uint64_t address) {
 
 void cont() {
     //check if next is breakpoint
-    struct user_regs_struct regs;
-    ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-    int temp = -1;
-
-    uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
-    // printf("%lx\n", pc);
-    for (int i = 0; i < nbp; i++) {
-        if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-            int status;
-            temp = i;
-            //flag1
-            // printf("Hi breakpoint %d\n", i);
-            // disassemble_instruction(breakpoints[i].addr);
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
-            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
-            waitpid(child_pid, &status, 0);
-            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC; //use temp+1 for hardcode 5
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
-            
-            break;
-        }
-    }
-    ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-    pc = regs.rip;
+    si(false);
     // disassemble_instruction(pc);
 
     ptrace(PTRACE_CONT, child_pid, NULL, NULL);
@@ -230,7 +207,7 @@ void set_bp() {
     }
 }
 
-void si() {
+void si(bool disasm) {
     int status;
     struct user_regs_struct regs;
     
@@ -247,7 +224,8 @@ void si() {
         ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
         check_bp();
         uint64_t pc = regs.rip;
-        disassemble_instruction(pc);
+        if(disasm)
+            disassemble_instruction(pc);
     }
 
     set_bp(); //set all breakpoint back
@@ -313,13 +291,7 @@ void trace_syscall() {
     uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-            int status;
-            temp = i;
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
-            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
-            waitpid(child_pid, &status, 0);
-            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
+            si(false);
             break;
         }
     }
@@ -408,7 +380,7 @@ void handle_command(char* command) {
         exit(0);
     }
     else if (strncmp(command, "si", 2) == 0){
-        si();
+        si(true);
     }
     else if (strncmp(command, "info break", 10) == 0){
         bool no_bp = false;
