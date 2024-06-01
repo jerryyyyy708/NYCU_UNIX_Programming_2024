@@ -13,9 +13,11 @@ make all
 ```
 
 ## Description
-* sdb: restore next in cont and syscall if next is bp (stable)
+* sdb: restore next in cont and syscall if next is bp (stable... no, bad)
 * sdb2: reset all bp before command and restore all if hit bp to ensure disassemble shows correct (might be more correct in hidden case)
-* sdb3: same as sdb but use single step instead for cases with same bp duplicate (just for backup)
+* sdb3: same as sdb but use single step instead for cases with same bp duplicate (5 no 6 yes, patch cont restore problem)
+* sdb4: si() when cont (all pass)
+* sdb5: find next bp and only set it (5 yes 6 no)
 
 ## Note
 1. For demo, run sdb first, and if there is an error, use sdb2 instead.
