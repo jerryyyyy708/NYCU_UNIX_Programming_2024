@@ -1,0 +1,14 @@
+** program './guess' loaded. entry point 0x40108b.
+      40108b: f3 0f 1e fa                     	endbr64   
+      40108f: 55                              	push      rbp
+      401090: 48 89 e5                        	mov       rbp, rsp
+      401093: 48 83 ec 10                     	sub       rsp, 0x10
+      401097: ba 12 00 00 00                  	mov       edx, 0x12
+(sdb) patch 0x4010e8 0x9090 2
+** patch memory at address 0x4010e8.
+(sdb) patch 0x402015 0x41414141 4
+** patch memory at address 0x402015.
+(sdb) cont
+guess a number > 1
+AAAA
+** the target program terminated.

@@ -32,7 +32,7 @@ bool check_bp() {
 
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-            printf("** Hit breakpoint at 0x%lx\n", pc);
+            printf("** hit a breakpoint at 0x%lx.\n", pc);
             return true;
         }
     }
@@ -122,18 +122,26 @@ void cont() {
     int temp = -1;
 
     uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
+    // printf("%lx\n", pc);
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
             int status;
             temp = i;
+            //flag1
+            // printf("Hi breakpoint %d\n", i);
+            // disassemble_instruction(breakpoints[i].addr);
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
             ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
             waitpid(child_pid, &status, 0);
             long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
+            
             break;
         }
     }
+    ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+    pc = regs.rip;
+    // disassemble_instruction(pc);
 
     ptrace(PTRACE_CONT, child_pid, NULL, NULL);
     int status;
@@ -146,7 +154,7 @@ void cont() {
 
         for (int i = 0; i < nbp; i++) {
             if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-                printf("** Hit breakpoint at 0x%lx\n", pc);
+                printf("** hit a breakpoint at 0x%lx.\n", pc);
                 ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
                 regs.rip = pc;
                 ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);//same, might have problem if too close
@@ -248,12 +256,35 @@ void si() {
 void patch_memory(uint64_t addr, uint64_t value, int len) {
     errno = 0;
     //get existing value
+    
+
+    bool is_bp = false;
+    int ibp = -1;
+
+    // disassemble_instruction(addr);
+    // check if the address is in a breakpoint
+    for (int i = 0; i < nbp; i++) {
+        if (breakpoints[i].enabled && breakpoints[i].addr >= addr && breakpoints[i].addr <= addr + len - 1) {
+            //printf("** Warning: Patching at breakpoint address. Updating original data.\n");
+            //breakpoints[i].original_data = new_value;
+            is_bp = true;
+            ibp = i;
+            break;
+        }
+    }
+
+    if(is_bp){
+        //flag2
+        ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[ibp].addr, (void*)breakpoints[ibp].original_data);
+        //temp restore
+    }
+
     long existing = ptrace(PTRACE_PEEKTEXT, child_pid, (void*)addr, NULL);
     if (errno) {
         perror("Failed to read memory");
         return;
     }
-
+        
     // mask to patch value
     uint64_t mask = (1ULL << (len * 8)) - 1;
     // clear and path value
@@ -265,13 +296,21 @@ void patch_memory(uint64_t addr, uint64_t value, int len) {
         return;
     }
 
-    // check if the address is in a breakpoint
-    for (int i = 0; i < nbp; i++) {
-        if (breakpoints[i].enabled && breakpoints[i].addr == addr) {
-            printf("** Warning: Patching at breakpoint address. Updating original data.\n");
-            breakpoints[i].original_data = new_value;
+    if(is_bp){
+        //set new bp
+        long data = ptrace(PTRACE_PEEKTEXT, child_pid, (void*)breakpoints[ibp].addr, NULL);
+        breakpoints[ibp].original_data = data;
+        breakpoints[ibp].enabled = true;
+        long int3 = (data & ~0xFF) | 0xCC;
+        //disassemble_instruction(addr);
+        if (ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[ibp].addr, (void*)int3) != 0) {
+            perror("** Failed to write memory");
+            return;
         }
+        
+        //disassemble_instruction(breakpoints[ibp].addr);
     }
+
 
     printf("** patch memory at address 0x%lx.\n", addr);
 }
@@ -333,7 +372,7 @@ void trace_syscall() {
             // check if the break is by breakpoint
             if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
                 notin = false;
-                printf("** Hit breakpoint at 0x%lx\n", pc);
+                printf("** hit a breakpoint at 0x%lx.\n", pc);
                 //temperary restore and show address (too close might have problem)
                 ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
                 regs.rip = pc;
@@ -354,12 +393,12 @@ void trace_syscall() {
 
         if (entering) {
             // entering = 1 -> enter syscall
-            printf("** enter a syscall(%lld) at 0x%llx\n", regs.orig_rax, regs.rip - 2);
+            printf("** enter a syscall(%lld) at 0x%llx.\n", regs.orig_rax, regs.rip - 2);
             uint64_t pc = regs.rip - 2;
             disassemble_instruction(pc);
         } else {
             // entering = 0 -> leave syscall
-            printf("** leave a syscall(%lld) = %lld at 0x%llx\n", regs.orig_rax, regs.rax, regs.rip - 2);
+            printf("** leave a syscall(%lld) = %lld at 0x%llx.\n", regs.orig_rax, regs.rax, regs.rip - 2);
             uint64_t pc = regs.rip - 2;
             disassemble_instruction(pc);
         }
@@ -429,7 +468,7 @@ void handle_command(char* command) {
         if(breakpoints[d_bp].enabled){
             breakpoints[d_bp].enabled = false;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[d_bp].addr, (void*)breakpoints[d_bp].original_data);
-            printf("** delete breakpoint %d\n", d_bp);
+            printf("** delete breakpoint %d.\n", d_bp);
         }
         else
             printf("** breakpoint %d does not exist.\n", d_bp);
@@ -461,6 +500,7 @@ void handle_command(char* command) {
 }
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     char command[128];
 
     if (argc == 2) {

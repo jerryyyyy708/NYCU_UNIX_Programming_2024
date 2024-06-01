@@ -32,7 +32,7 @@ bool check_bp() {
 
     for (int i = 0; i < nbp; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-            printf("** Hit breakpoint at 0x%lx\n", pc);
+            printf("** hit a breakpoint at 0x%lx.\n", pc);
             return true;
         }
     }
@@ -115,53 +115,6 @@ void disassemble_instruction(uint64_t address) {
     cs_close(&handle);
 }
 
-void cont() {
-    //check if next is breakpoint
-    struct user_regs_struct regs;
-    ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-    int temp = -1;
-
-    uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
-    for (int i = 0; i < nbp; i++) {
-        if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-            int status;
-            temp = i;
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
-            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
-            waitpid(child_pid, &status, 0);
-            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
-            break;
-        }
-    }
-
-    ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-    int status;
-    waitpid(child_pid, &status, 0);
-
-    if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
-        struct user_regs_struct regs;
-        ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-        uint64_t pc = regs.rip - 1;  // Adjust PC because it stops after the INT 3 instruction
-
-        for (int i = 0; i < nbp; i++) {
-            if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
-                printf("** Hit breakpoint at 0x%lx\n", pc);
-                reset_bp();
-                regs.rip = pc;
-                ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);//same, might have problem if too close
-                disassemble_instruction(pc);
-                break;
-            }
-        }
-    } else if (WIFEXITED(status)) {
-        printf("** the target program terminated.\n");
-        exit(0);
-        loaded = false;
-    }
-}
-
-
 void load_program(const char* program) {
     if (loaded) {
         printf("** Program is already loaded.\n");
@@ -217,6 +170,52 @@ void set_bp() {
                 perror("Failed to set breakpoint");
             }
         }
+    }
+}
+
+void cont() {
+    //check if next is breakpoint
+    struct user_regs_struct regs;
+    ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+    int temp = -1;
+
+    uint64_t pc = regs.rip; //skip one if next is bp, save in temp for restore
+    for (int i = 0; i < nbp; i++) {
+        if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+            int status;
+            temp = i;
+            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
+            waitpid(child_pid, &status, 0);
+            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
+            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
+            break;
+        }
+    }
+
+    ptrace(PTRACE_CONT, child_pid, NULL, NULL);
+    int status;
+    waitpid(child_pid, &status, 0);
+
+    if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
+        struct user_regs_struct regs;
+        ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+        uint64_t pc = regs.rip - 1;  // Adjust PC because it stops after the INT 3 instruction
+
+        for (int i = 0; i < nbp; i++) {
+            if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
+                printf("** hit a breakpoint at 0x%lx.\n", pc);
+                reset_bp();
+                regs.rip = pc;
+                ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);//same, might have problem if too close
+                disassemble_instruction(pc);
+                break;
+            }
+        }
+    } else if (WIFEXITED(status)) {
+        printf("** the target program terminated.\n");
+        exit(0);
+        loaded = false;
     }
 }
 
@@ -331,7 +330,7 @@ void trace_syscall() {
             // check if the break is by breakpoint
             if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
                 notin = false;
-                printf("** Hit breakpoint at 0x%lx\n", pc);
+                printf("** hit a breakpoint at 0x%lx.\n", pc);
                 //temperary restore and show address (too close might have problem)
                 reset_bp();
                 regs.rip = pc;
@@ -350,13 +349,13 @@ void trace_syscall() {
 
         if (entering) {
             // entering = 1 -> enter syscall
-            printf("** enter a syscall(%lld) at 0x%llx\n", regs.orig_rax, regs.rip - 2);
+            printf("** enter a syscall(%lld) at 0x%llx.\n", regs.orig_rax, regs.rip - 2);
             uint64_t pc = regs.rip - 2;
             reset_bp();
             disassemble_instruction(pc);
         } else {
             // entering = 0 -> leave syscall
-            printf("** leave a syscall(%lld) = %lld at 0x%llx\n", regs.orig_rax, regs.rax, regs.rip - 2);
+            printf("** leave a syscall(%lld) = %lld at 0x%llx.\n", regs.orig_rax, regs.rax, regs.rip - 2);
             uint64_t pc = regs.rip - 2;
             reset_bp();
             disassemble_instruction(pc);
@@ -428,7 +427,7 @@ void handle_command(char* command) {
         if(breakpoints[d_bp].enabled){
             breakpoints[d_bp].enabled = false;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[d_bp].addr, (void*)breakpoints[d_bp].original_data);
-            printf("** delete breakpoint %d\n", d_bp);
+            printf("** delete breakpoint %d.\n", d_bp);
         }
         else
             printf("** breakpoint %d does not exist.\n", d_bp);
@@ -460,6 +459,7 @@ void handle_command(char* command) {
 }
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     char command[128];
 
     if (argc == 2) {
