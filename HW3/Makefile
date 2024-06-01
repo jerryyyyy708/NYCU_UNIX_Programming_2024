@@ -7,6 +7,7 @@ TARGET2=sdb2
 TARGET3=sdb3
 TARGET4=sdb4
 TARGET5=sdb5
+TARGET6=sdb6
 
 $(TARGET): main.c
 	$(CC) $(CFLAGS) main.c -o $(TARGET) -lcapstone 
@@ -23,10 +24,13 @@ $(TARGET4): main4.c
 $(TARGET5): main5.c
 	$(CC) $(CFLAGS) main5.c -o $(TARGET5) -lcapstone 
 
-all: $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5)
+$(TARGET6): main6.c
+	$(CC) $(CFLAGS) main6.c -o $(TARGET6) -lcapstone 
+
+all: $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6)
 
 clean:
-	rm -f $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5)
+	rm -f $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6)
 
 setup:
 	sudo apt-get install libcapstone-dev
