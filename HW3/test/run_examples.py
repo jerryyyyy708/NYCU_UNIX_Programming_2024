@@ -7,7 +7,7 @@ context.log_level = "error"
 
 cases_to_run = ["1", "2", "3", "4", "5", "6", "8"]
 #cases_to_run = ["5"]
-TIMEOUT_SECONDS = 0.01
+TIMEOUT_SECONDS = 0.03
 
 
 def wrap_recvrepeat(r):

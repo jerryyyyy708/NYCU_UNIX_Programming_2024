@@ -8,6 +8,7 @@ TARGET3=sdb3
 TARGET4=sdb4
 TARGET5=sdb5
 TARGET6=sdb6
+TARGET7=sdb7
 
 $(TARGET): main.c
 	$(CC) $(CFLAGS) main.c -o $(TARGET) -lcapstone 
@@ -27,10 +28,13 @@ $(TARGET5): main5.c
 $(TARGET6): main6.c
 	$(CC) $(CFLAGS) main6.c -o $(TARGET6) -lcapstone 
 
-all: $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6)
+$(TARGET7): main7.c
+	$(CC) $(CFLAGS) main7.c -o $(TARGET7) -lcapstone 
+
+all: $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7)
 
 clean:
-	rm -f $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6)
+	rm -f $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) test/*.out test/diff.txt
 
 setup:
 	sudo apt-get install libcapstone-dev

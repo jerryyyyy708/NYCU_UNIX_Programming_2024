@@ -8,7 +8,7 @@ make setup
 //sdb
 make
 
-//sdb, sdb2, sdb3
+//sdb, sdb2, sdb3...
 make all
 ```
 
@@ -19,6 +19,7 @@ make all
 * sdb4: si() when cont (all pass)
 * sdb5: find next bp and only set it (5 yes 6 no) (check set need or not if fail)
 * sdb6: hardcoded, if not found breakpoint use last breakpoint ver of sdb5
+* sdb7: fix bug in sdb3, best accuracy
 
 ## Note
 1. For demo, run sdb first, and if there is an error, use sdb2 instead.
