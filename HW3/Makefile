@@ -3,38 +3,14 @@
 CC=gcc
 CFLAGS=-g -Wall 
 TARGET=sdb
-TARGET2=sdb2
-TARGET3=sdb3
-TARGET4=sdb4
-TARGET5=sdb5
-TARGET6=sdb6
-TARGET7=sdb7
 
 $(TARGET): main.c
 	$(CC) $(CFLAGS) main.c -o $(TARGET) -lcapstone 
 
-$(TARGET2): main2.c
-	$(CC) $(CFLAGS) main2.c -o $(TARGET2) -lcapstone 
-
-$(TARGET3): main3.c
-	$(CC) $(CFLAGS) main3.c -o $(TARGET3) -lcapstone 
-
-$(TARGET4): main4.c
-	$(CC) $(CFLAGS) main4.c -o $(TARGET4) -lcapstone 
-
-$(TARGET5): main5.c
-	$(CC) $(CFLAGS) main5.c -o $(TARGET5) -lcapstone 
-
-$(TARGET6): main6.c
-	$(CC) $(CFLAGS) main6.c -o $(TARGET6) -lcapstone 
-
-$(TARGET7): main7.c
-	$(CC) $(CFLAGS) main7.c -o $(TARGET7) -lcapstone 
-
-all: $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7)
+all: $(TARGET)
 
 clean:
-	rm -f $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) test/*.out test/diff.txt
+	rm -f $(TARGET) test/*.out test/diff.txt
 
 setup:
 	sudo apt-get install libcapstone-dev
