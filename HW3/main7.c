@@ -363,6 +363,21 @@ void trace_syscall() {
             waitpid(child_pid, &status, 0);
             long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
+            long long dt = 100;
+            int cls_idx = -1;
+            for(int j = 0; j<nbp ; j++){
+                if(breakpoints[j].enabled && breakpoints[j].addr > breakpoints[i].addr && breakpoints[j].addr <= breakpoints[i].addr + 7){
+                    if(breakpoints[j].addr - breakpoints[i].addr < dt){
+                        dt = breakpoints[j].addr - breakpoints[i].addr;
+                        cls_idx = j;
+                    }
+                    //reset breakpoint if too close
+                }
+            }
+            if(cls_idx != -1){
+                long int3_instruction2 = (breakpoints[cls_idx].original_data & ~0xFF) | 0xCC;
+                ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[cls_idx].addr, int3_instruction2);
+            }    
             break;
         }
     }
