@@ -163,6 +163,7 @@ void cont() {
     waitpid(child_pid, &status, 0);
 
     if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
+        reset_bp();
         struct user_regs_struct regs;
         ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
         uint64_t pc = regs.rip - 1;  // Adjust PC because it stops after the INT 3 instruction
@@ -170,7 +171,7 @@ void cont() {
         for (int i = 0; i < nbp; i++) {
             if (breakpoints[i].enabled && pc == breakpoints[i].addr) {
                 printf("** hit a breakpoint at 0x%lx.\n", pc);
-                ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
+                //ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
                 regs.rip = pc;
                 ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);//same, might have problem if too close
                 disassemble_instruction(pc);
@@ -220,7 +221,7 @@ void load_program(const char* program) {
 }
 
 void reset_bp() {
-    for (int i = 0; i < MB; i++) {
+    for (int i = MB -1; i >= 0; i--) {
         if (breakpoints[i].enabled) {
             // restore all instruction
             if (ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr,

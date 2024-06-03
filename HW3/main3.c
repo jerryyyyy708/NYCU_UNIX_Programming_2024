@@ -148,6 +148,7 @@ void cont() {
     waitpid(child_pid, &status, 0);
 
     if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
+        reset_bp();
         struct user_regs_struct regs;
         ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
         uint64_t pc = regs.rip - 1;  // Adjust PC because it stops after the INT 3 instruction
@@ -205,7 +206,7 @@ void load_program(const char* program) {
 }
 
 void reset_bp() {
-    for (int i = 0; i < MB; i++) {
+    for (int i = MB -1; i >= 0; i--) {
         if (breakpoints[i].enabled) {
             // restore all instruction
             if (ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr,
@@ -318,8 +319,10 @@ void trace_syscall() {
             ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[i].addr, (void*)breakpoints[i].original_data);
             ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
             waitpid(child_pid, &status, 0);
-            long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
-            ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
+            // long int3_instruction = (breakpoints[temp].original_data & ~0xFF) | 0xCC;
+            // ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[temp].addr, int3_instruction);
+            reset_bp();
+            set_bp();
             break;
         }
     }
@@ -330,7 +333,7 @@ void trace_syscall() {
     // run until next syscall
     ptrace(PTRACE_SYSCALL, child_pid, 0, 0);
     waitpid(child_pid, &status, 0);
-    
+    reset_bp();
     if (WIFEXITED(status)) {
         printf("** the target program terminated.\n");
         exit(0);
@@ -472,7 +475,7 @@ void handle_command(char* command) {
 }
 
 int main(int argc, char *argv[]) {
-    setvbuf(stdout, NULL, _IONBF, 0);
+    //setvbuf(stdout, NULL, _IONBF, 0);
     char command[128];
 
     if (argc == 2) {
